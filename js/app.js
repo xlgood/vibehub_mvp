@@ -1,11 +1,12 @@
 // ==========================================
-// 1. Supabase 配置 (请替换为你自己的)
+// 1. Supabase 配置 (请再次填入你的配置)
 // ==========================================
 const SUPABASE_URL = 'https://glcqddlmmvqigamcnyhq.supabase.co';  // 替换此处
+
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdsY3FkZGxtbXZxaWdhbWNueWhxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg3Mzg2MzAsImV4cCI6MjA4NDMxNDYzMH0.5DYRs9SmEUY1tU0mWfG9WIXwLV0rJeTOatKV_BqRHYI';              // 替换此处
 
-// 初始化客户端
-const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+// 【修复点 1】改个名字，叫 supabaseClient，避免和全局变量冲突
+const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // ==========================================
 // 2. 全局状态
@@ -20,15 +21,21 @@ const ROW_ID = 1;
 // 3. 初始化与实时监听
 // ==========================================
 window.onload = async () => {
-    // 获取初始数据
-    const { data } = await supabase.from('vibe_stats').select('*').eq('id', ROW_ID).single();
+    // 【修复点 2】调用时使用 supabaseClient
+    const { data } = await supabaseClient
+        .from('vibe_stats')
+        .select('*')
+        .eq('id', ROW_ID)
+        .single();
+
     if (data) {
-        state.warm = data.warm; state.cool = data.cool;
+        state.warm = data.warm; 
+        state.cool = data.cool;
         updateUI();
     }
 
-    // 开启 Realtime 监听
-    supabase.channel('vibe-updates')
+    // 【修复点 3】监听时使用 supabaseClient
+    supabaseClient.channel('vibe-updates')
         .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'vibe_stats', filter: `id=eq.${ROW_ID}` }, 
         (payload) => {
             state.warm = payload.new.warm;
@@ -53,9 +60,10 @@ async function manualAddEnergy(type, btn) {
     setTimeout(() => btn.style.transform = "scale(1)", 150);
     showFloatingFeedback(type, 1, btn);
     
-    // 调用 Supabase RPC 函数
     const rpcName = type === 'warm' ? 'increment_warm' : 'increment_cool';
-    await supabase.rpc(rpcName, { row_id: ROW_ID });
+    
+    // 【修复点 4】RPC 调用使用 supabaseClient
+    await supabaseClient.rpc(rpcName, { row_id: ROW_ID });
 }
 
 async function submitPost() {
@@ -65,12 +73,15 @@ async function submitPost() {
     
     createVibe(text, postState.side);
     const rpcName = postState.side === 'warm' ? 'increment_warm' : 'increment_cool';
-    await supabase.rpc(rpcName, { row_id: ROW_ID });
+    
+    // 【修复点 5】RPC 调用使用 supabaseClient
+    await supabaseClient.rpc(rpcName, { row_id: ROW_ID });
+    
     closeModal('post-modal');
 }
 
 // ==========================================
-// 5. UI 逻辑
+// 5. UI 逻辑 (保持不变)
 // ==========================================
 function updateUI() {
     const total = state.warm + state.cool;
