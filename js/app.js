@@ -83,20 +83,38 @@ async function submitPost() {
 // ==========================================
 // 5. UI 逻辑 (保持不变)
 // ==========================================
+// ==========================================
+// 5. UI 逻辑 (修复版)
+// ==========================================
 function updateUI() {
-    const total = state.warm + state.cool;
-    if (total === 0) return;
-    const warmPct = (state.warm / total) * 100;
-    const coolPct = 100 - warmPct;
-
+    // 1. 无论总数是多少，先把数字显示出来
     document.getElementById('count-warm').innerText = formatCount(state.warm);
     document.getElementById('count-cool').innerText = formatCount(state.cool);
-    
+
+    const total = state.warm + state.cool;
+
+    // 2. 准备变量
+    let warmPct = 50; // 默认 50%
+    let coolPct = 50; // 默认 50%
+
+    // 3. 如果总数大于 0，才计算真实百分比
+    if (total > 0) {
+        warmPct = (state.warm / total) * 100;
+        coolPct = 100 - warmPct;
+    }
+
+    // 4. 更新能量条宽度和文字
     const barWarm = document.getElementById('bar-warm');
     const barCool = document.getElementById('bar-cool');
-    barWarm.style.width = warmPct + "%"; barCool.style.width = coolPct + "%";
-    barWarm.innerText = Math.round(warmPct) + "%"; barCool.innerText = Math.round(coolPct) + "%";
+    
+    barWarm.style.width = warmPct + "%";
+    barCool.style.width = coolPct + "%";
+    
+    // 如果是 0，就显示 0%，否则取整
+    barWarm.innerText = total === 0 ? "0%" : Math.round(warmPct) + "%";
+    barCool.innerText = total === 0 ? "0%" : Math.round(coolPct) + "%";
 
+    // 5. 主题颜色切换逻辑
     const root = document.documentElement;
     const statusText = document.getElementById('status-text');
     const voltageText = document.getElementById('voltage-text');
@@ -104,28 +122,39 @@ function updateUI() {
     const btnWarm = document.getElementById('btn-warm');
     const btnCool = document.getElementById('btn-cool');
 
-    if (warmPct > 50) {
+    // 只有当有明显倾向时才切换颜色 (50/50 时保持中立)
+    if (warmPct > 50 && total > 0) {
+        // --- 暖色模式 ---
         root.style.setProperty('--bg-gradient', 'var(--warm-bg-gradient)');
         root.style.setProperty('--glass-bg', 'var(--warm-glass)');
         root.style.setProperty('--card-border', 'var(--warm-border)');
         root.style.setProperty('--primary-color', 'var(--warm-primary)');
-        statusText.innerText = "Overheating"; voltageText.innerText = warmPct.toFixed(1) + "°V";
+        statusText.innerText = "Overheating";
+        voltageText.innerText = warmPct.toFixed(1) + "°V";
         iconWrapper.innerHTML = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.1.2-2.2.5-3.3a9 9 0 0 0 2.5 2.8z"></path></svg>`;
-        btnWarm.classList.add('active-mode'); btnCool.classList.remove('active-mode');
-    } else if (coolPct > 50) {
+        btnWarm.classList.add('active-mode'); 
+        btnCool.classList.remove('active-mode');
+    } else if (coolPct > 50 && total > 0) {
+        // --- 冷色模式 ---
         root.style.setProperty('--bg-gradient', 'var(--cool-bg-gradient)');
         root.style.setProperty('--glass-bg', 'var(--cool-glass)');
         root.style.setProperty('--card-border', 'var(--cool-border)');
         root.style.setProperty('--primary-color', 'var(--cool-primary)');
-        statusText.innerText = "Freezing"; voltageText.innerText = coolPct.toFixed(1) + "°K";
+        statusText.innerText = "Freezing";
+        voltageText.innerText = coolPct.toFixed(1) + "°K";
         iconWrapper.innerHTML = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18m9-9H3m15.36-6.36l-12.72 12.72m0-12.72l12.72 12.72"></path></svg>`;
-        btnCool.classList.add('active-mode'); btnWarm.classList.remove('active-mode');
+        btnCool.classList.add('active-mode'); 
+        btnWarm.classList.remove('active-mode');
     } else {
-        statusText.innerText = "Neutral"; voltageText.innerText = "STABLE";
+        // --- 中立模式 (包括 0/0 的情况) ---
+        statusText.innerText = "Neutral";
+        voltageText.innerText = "STABLE";
         root.style.setProperty('--bg-gradient', 'radial-gradient(circle at 50% 50%, #1a1a1a 0%, #000 100%)');
         root.style.setProperty('--primary-color', '#888');
         root.style.setProperty('--glass-bg', 'rgba(30,30,30,0.6)');
-        btnWarm.classList.remove('active-mode'); btnCool.classList.remove('active-mode');
+        root.style.setProperty('--card-border', 'rgba(255, 255, 255, 0.1)'); // 确保边框也复原
+        btnWarm.classList.remove('active-mode'); 
+        btnCool.classList.remove('active-mode');
     }
 }
 
