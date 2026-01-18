@@ -204,13 +204,32 @@ function openViewModal(text, element) {
     setTimeout(() => modal.classList.add('show'), 10);
 }
 
-function burnMessage() {
+// 记得加上 async，因为我们要进行网络请求
+async function burnMessage() {
     const modal = document.getElementById('view-modal');
     modal.classList.remove('show');
     setTimeout(() => modal.style.display = 'none', 300);
+
     if (activeViewElement) {
+        // 1. 获取当前气泡的类型 (warm 还是 cool?)
+        // 我们在 createVibe 里设置过 dataset.type，现在把它取出来
+        const type = activeViewElement.dataset.type;
+
+        // 2. 如果成功获取到类型，告诉数据库减 1
+        if (type) {
+            const rpcName = type === 'warm' ? 'decrement_warm' : 'decrement_cool';
+            // 不用 await 等待结果，让它在后台默默减就行，这样视觉上更流畅
+            supabaseClient.rpc(rpcName, { row_id: ROW_ID });
+        }
+
+        // 3. 执行原本的视觉销毁动画
         activeViewElement.classList.add('shatter');
-        setTimeout(() => { if (activeViewElement?.parentNode) activeViewElement.parentNode.removeChild(activeViewElement); activeViewElement = null; }, 500);
+        setTimeout(() => {
+            if (activeViewElement && activeViewElement.parentNode) {
+                activeViewElement.parentNode.removeChild(activeViewElement);
+            }
+            activeViewElement = null;
+        }, 500);
     }
 }
 
