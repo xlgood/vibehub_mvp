@@ -204,25 +204,37 @@ function openViewModal(text, element) {
     setTimeout(() => modal.classList.add('show'), 10);
 }
 
-// 记得加上 async，因为我们要进行网络请求
+// --- 调试版 burnMessage ---
 async function burnMessage() {
     const modal = document.getElementById('view-modal');
     modal.classList.remove('show');
     setTimeout(() => modal.style.display = 'none', 300);
 
     if (activeViewElement) {
-        // 1. 获取当前气泡的类型 (warm 还是 cool?)
-        // 我们在 createVibe 里设置过 dataset.type，现在把它取出来
+        // 1. 获取类型
         const type = activeViewElement.dataset.type;
+        console.log("准备销毁气泡，类型为:", type); // 调试日志
 
-        // 2. 如果成功获取到类型，告诉数据库减 1
         if (type) {
-            const rpcName = type === 'warm' ? 'decrement_warm' : 'decrement_cool';
-            // 不用 await 等待结果，让它在后台默默减就行，这样视觉上更流畅
-            supabaseClient.rpc(rpcName, { row_id: ROW_ID });
+            // 注意：这里我们用刚才新建的 v2 版本函数
+            const rpcName = type === 'warm' ? 'decrement_warm_v2' : 'decrement_cool_v2';
+            
+            console.log("正在调用数据库函数:", rpcName, "Row ID:", ROW_ID);
+
+            // 2. 调用数据库并接收返回结果
+            const { data, error } = await supabaseClient.rpc(rpcName, { row_id: ROW_ID });
+
+            if (error) {
+                console.error("❌ 数据库报错:", error);
+                alert("销毁失败，数据库报错: " + error.message);
+            } else {
+                console.log("✅ 数据库扣减成功");
+            }
+        } else {
+            console.error("❌ 错误：无法识别气泡类型 (dataset.type 为空)");
         }
 
-        // 3. 执行原本的视觉销毁动画
+        // 3. 视觉销毁
         activeViewElement.classList.add('shatter');
         setTimeout(() => {
             if (activeViewElement && activeViewElement.parentNode) {
@@ -230,6 +242,8 @@ async function burnMessage() {
             }
             activeViewElement = null;
         }, 500);
+    } else {
+        console.error("❌ 错误：找不到 activeViewElement");
     }
 }
 
