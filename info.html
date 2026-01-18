@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>About VibeHub - Digital Resonance Protocol</title>
+    <meta name="description" content="Learn about the VibeHub protocol, our privacy policy regarding digital amnesia, and how to contact the core resonance team.">
+    <link rel="stylesheet" href="css/info.css"> 
+</head>
+<body>
+
+    <a href="index.html" class="back-link">
+        <span class="back-arrow">←</span> RESUME RESONANCE
+    </a>
+
+    <div class="site-header">
+        <svg width="150" height="34" viewBox="0 0 180 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="vibeGradient2" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#00FFFF" />
+                <stop offset="100%" stop-color="#FF00FF" />
+              </linearGradient>
+            </defs>
+            <g transform="translate(0, 4)">
+              <path d="M16 0C7.16 0 0 7.16 0 16C0 24.84 7.16 32 16 32C24.84 32 32 24.84 32 16" stroke="url(#vibeGradient2)" stroke-width="3" stroke-linecap="round"/>
+              <path d="M10 16L13 21L19 11L22 16" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+              <circle cx="22" cy="16" r="2" fill="#00FFFF"/>
+            </g>
+            <text x="42" y="26" font-family="'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="22" font-weight="700" fill="white" letter-spacing="-0.5">
+              Vibe<tspan fill="url(#vibeGradient2)">Hub</tspan>
+            </text>
+        </svg>
+    </div>
+
+    <div class="nav-tabs">
+        <button class="tab-btn active" onclick="switchTab('about')">ABOUT</button>
+        <button class="tab-btn" onclick="switchTab('privacy')">PRIVACY</button>
+        <button class="tab-btn" onclick="switchTab('contact')">CONTACT</button>
+    </div>
+
+    <div class="content-card">
+        <div id="about" class="page-section active">
+            <h1>Digital Resonance Experiment</h1>
+            <p>VibeHub is not just a social platform; it is a global emotional voltmeter. We exist to visualize the collective "temperature" of the internet in real-time.</p>
+            <h2>The Mechanism</h2>
+            <p>Every interaction on VibeHub contributes to the global energy state:</p>
+            <ul>
+                <li><strong>Warm Energy:</strong> Passion, anger, hype, activity.</li>
+                <li><strong>Cool Energy:</strong> Calm, sadness, focus, solitude.</li>
+            </ul>
+        </div>
+
+        <div id="privacy" class="page-section">
+            <h1>Privacy Protocol</h1>
+            <p>We believe in "Digital Amnesia". Minimal telemetry, no cross-site tracking.</p>
+            <h2>Data Collection</h2>
+            <p>Messages sent to the void are stored temporarily in the collective consciousness (database) and do not contain personal identifiers.</p>
+        </div>
+
+        <div id="contact" class="page-section">
+            <h1>Establish Connection</h1>
+            <p>Found a glitch in the matrix?</p>
+            <form onsubmit="event.preventDefault(); alert('Signal Transmitted.');">
+                <div class="form-group">
+                    <label class="form-label">TRANSMISSION</label>
+                    <textarea class="styled-textarea" placeholder="Describe the anomaly..."></textarea>
+                </div>
+                <button type="submit" class="submit-btn">SEND SIGNAL</button>
+            </form>
+        </div>
+    </div>
+
+    <script src="js/info.js"></script>
+</body>
+</html>

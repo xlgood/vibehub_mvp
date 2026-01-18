@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    
+    <title>VibeHub | Global Emotional Resonance & Mood Tracker</title>
+    <meta name="description" content="VibeHub is a real-time digital emotional voltmeter. Visualize the collective temperature of the internet. Join the global resonance of Fire (Warm) vs. Ice (Cool).">
+    <meta name="keywords" content="mood tracker, global vibe, emotional resonance, cyberpunk social, digital voltmeter">
+    <link rel="canonical" href="https://vibehub.ink/">
+    
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="VibeHub - What's the World Feeling?">
+    <meta property="og:description" content="A real-time battle between Warmth and Coolness. Add your energy to the global grid.">
+    <meta property="og:url" content="https://vibehub.ink/">
+
+    <link rel="stylesheet" href="css/main.css">
+
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "VibeHub",
+      "url": "https://vibehub.ink/",
+      "description": "A collaborative digital art project tracking global user sentiment in real-time.",
+      "applicationCategory": "SocialNetworkingApplication"
+    }
+    </script>
+</head>
+<body>
+
+    <header class="site-header">
+        <svg width="180" height="40" viewBox="0 0 180 40" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="VibeHub Logo">
+            <defs>
+              <linearGradient id="vibeGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#00FFFF" />
+                <stop offset="100%" stop-color="#FF00FF" />
+              </linearGradient>
+            </defs>
+            <g transform="translate(0, 4)">
+              <path d="M16 0C7.16 0 0 7.16 0 16C0 24.84 7.16 32 16 32C24.84 32 32 24.84 32 16" stroke="url(#vibeGradient)" stroke-width="3" stroke-linecap="round"/>
+              <path d="M10 16L13 21L19 11L22 16" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+              <circle cx="22" cy="16" r="2" fill="#00FFFF"/>
+            </g>
+            <text x="42" y="26" font-family="'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="22" font-weight="700" fill="white" letter-spacing="-0.5">
+              Vibe<tspan fill="url(#vibeGradient)">Hub</tspan>
+            </text>
+        </svg>
+    </header>
+
+    <main>
+        <div class="dashboard-wrapper">
+            <div class="glass-panel status-card">
+                <div class="status-icon-wrapper" id="main-icon">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle></svg>
+                </div>
+                <div class="status-info">
+                    <div class="status-label">RESONANCE</div>
+                    <div class="status-title" id="status-text">Neutral</div>
+                </div>
+                <div class="status-value-box" id="voltage-text">BALANCED</div>
+            </div>
+
+            <div class="glass-panel energy-control-panel">
+                <button class="click-btn btn-warm" id="btn-warm" onclick="manualAddEnergy('warm', this)">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a7 7 0 0 1 7 7c0 2.38-1.19 4.47-3 5.74V17a2 2 0 0 1-2 2H10a2 2 0 0 1-2-2v-2.26C6.19 13.47 5 11.38 5 9a7 7 0 0 1 7-7z"></path></svg>
+                    <span class="count-display" id="count-warm">...</span>
+                </button>
+                <div class="bar-container">
+                    <div id="bar-warm" class="bar-segment" style="width: 50%">50%</div>
+                    <div id="bar-cool" class="bar-segment" style="width: 50%">50%</div>
+                </div>
+                <button class="click-btn btn-cool" id="btn-cool" onclick="manualAddEnergy('cool', this)">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18m9-9H3m15.36-6.36l-12.72 12.72m0-12.72l12.72 12.72"></path></svg>
+                    <span class="count-display" id="count-cool">...</span>
+                </button>
+            </div>
+        </div>
+
+        <div id="floating-area"></div>
+    </main>
+    
+    <button class="fab" onclick="openPostModal()" aria-label="Add Vibe">+</button>
+
+    <div id="view-modal" class="modal-overlay">
+        <div class="modal-content">
+            <div style="font-size:0.8rem; color:#666; margin-bottom:10px; text-transform:uppercase; letter-spacing:1px;">Secret Message</div>
+            <div id="view-text">Content goes here</div>
+            <button class="close-btn" onclick="burnMessage()">Dissolve (-1 Energy)</button>
+        </div>
+    </div>
+
+    <div id="post-modal" class="modal-overlay">
+        <div class="modal-content">
+            <h3 style="margin:0 0 15px 0; color:#fff;">Emit Energy</h3>
+            <textarea id="post-input" placeholder="What's your vibe?" maxlength="60" oninput="checkInput()"></textarea>
+            <div class="char-counter" id="char-count">0 / 60</div>
+
+            <div class="emoji-bar">
+                <button class="emoji-btn" onclick="addEmoji('🔥')">🔥</button>
+                <button class="emoji-btn" onclick="addEmoji('⚡')">⚡</button>
+                <button class="emoji-btn" onclick="addEmoji('😡')">😡</button>
+                <button class="emoji-btn" onclick="addEmoji('😭')">😭</button>
+                <button class="emoji-btn" onclick="addEmoji('🧊')">🧊</button>
+                <button class="emoji-btn" onclick="addEmoji('❄️')">❄️</button>
+                <button class="emoji-btn" onclick="addEmoji('💀')">💀</button>
+                <button class="emoji-btn" onclick="addEmoji('🤡')">🤡</button>
+                <button class="emoji-btn" onclick="addEmoji('😴')">😴</button>
+            </div>
+
+            <div class="side-selector">
+                <div class="side-option warm" id="opt-warm" onclick="selectSide('warm')">Warm (+1)</div>
+                <div class="side-option cool" id="opt-cool" onclick="selectSide('cool')">Cool (+1)</div>
+            </div>
+            <button id="submit-post-btn" class="submit-btn" onclick="submitPost()">Release</button>
+            <div style="margin-top:15px; font-size:0.8rem; color:#666; cursor:pointer;" onclick="closeModal('post-modal')">Cancel</div>
+        </div>
+    </div>
+
+    <footer style="position: fixed; bottom: 10px; width: 100%; text-align: center; z-index: 50; pointer-events: none;">
+        <a href="info.html" style="color: rgba(255,255,255,0.3); text-decoration: none; font-size: 0.8rem; pointer-events: auto;">ABOUT & PROTOCOL</a>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
