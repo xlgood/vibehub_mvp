@@ -204,37 +204,30 @@ function openViewModal(text, element) {
     setTimeout(() => modal.classList.add('show'), 10);
 }
 
-// --- 调试版 burnMessage ---
+// --- 最终正式版 burnMessage (无延迟 + 无日志) ---
 async function burnMessage() {
     const modal = document.getElementById('view-modal');
     modal.classList.remove('show');
     setTimeout(() => modal.style.display = 'none', 300);
 
     if (activeViewElement) {
-        // 1. 获取类型
         const type = activeViewElement.dataset.type;
-        console.log("准备销毁气泡，类型为:", type); // 调试日志
 
         if (type) {
-            // 注意：这里我们用刚才新建的 v2 版本函数
-            const rpcName = type === 'warm' ? 'decrement_warm_v2' : 'decrement_cool_v2';
-            
-            console.log("正在调用数据库函数:", rpcName, "Row ID:", ROW_ID);
-
-            // 2. 调用数据库并接收返回结果
-            const { data, error } = await supabaseClient.rpc(rpcName, { row_id: ROW_ID });
-
-            if (error) {
-                console.error("❌ 数据库报错:", error);
-                alert("销毁失败，数据库报错: " + error.message);
+            // 1. 【核心优化】先在本地立即更新 UI (不用等服务器，实现零延迟)
+            if (type === 'warm') {
+                state.warm = Math.max(0, state.warm - 1);
             } else {
-                console.log("✅ 数据库扣减成功");
+                state.cool = Math.max(0, state.cool - 1);
             }
-        } else {
-            console.error("❌ 错误：无法识别气泡类型 (dataset.type 为空)");
+            updateUI(); // 立即刷新大能量条
+
+            // 2. 后台默默通知数据库 (使用我们要验证成功的 v2 版本)
+            const rpcName = type === 'warm' ? 'decrement_warm_v2' : 'decrement_cool_v2';
+            supabaseClient.rpc(rpcName, { row_id: ROW_ID });
         }
 
-        // 3. 视觉销毁
+        // 3. 执行视觉销毁动画
         activeViewElement.classList.add('shatter');
         setTimeout(() => {
             if (activeViewElement && activeViewElement.parentNode) {
@@ -242,8 +235,6 @@ async function burnMessage() {
             }
             activeViewElement = null;
         }, 500);
-    } else {
-        console.error("❌ 错误：找不到 activeViewElement");
     }
 }
 
