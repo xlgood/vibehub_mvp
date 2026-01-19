@@ -43,10 +43,10 @@ window.onload = async () => {
         messages.forEach(msg => createVibe(msg.content, msg.type, true, msg.id));
     }
 
-    // B. 开启全局监听频道 (Broadcast + Postgres Changes)
+    // B. 开启全局监听频道
     const channel = supabaseClient.channel('global-events');
 
-    // --- B1. 监听数值变化 (兜底校准) ---
+    // --- B1. 监听数值变化 ---
     channel.on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'vibe_stats', filter: `id=eq.${ROW_ID}` }, 
         (payload) => {
             state.warm = payload.new.warm;
@@ -60,13 +60,9 @@ window.onload = async () => {
         (payload) => {
             const newMsg = payload.new;
             const exists = document.querySelector(`.vibe-wrapper[data-id="${newMsg.id}"]`);
-            // 如果本地没有（说明是别人发的），才创建并播放特效
             if (!exists) {
-                createVibe(newMsg.content, newMsg.type, false, newMsg.id); // false = 播放气泡出现动画
-                
-                // 【全球同步特效】别人发了气泡，我这里也能看到按钮冒+1
-                const targetBtnId = newMsg.type === 'warm' ? 'btn-warm' : 'btn-cool';
-                showFloatingFeedback(newMsg.type, 1, document.getElementById(targetBtnId));
+                // 【修复点 1】这里只负责创建气泡，不再播放特效，特效交给下面的 broadcast 监听
+                createVibe(newMsg.content, newMsg.type, false, newMsg.id); 
             }
         }
     );
@@ -84,17 +80,20 @@ window.onload = async () => {
         }
     );
 
-    // --- B4. 【核心】监听全球广播 (点击特效同步) ---
-    // 监听 'click-effect' 事件，一旦收到，就播放特效
+    // --- B4. 监听全球广播 (特效同步) ---
     channel.on('broadcast', { event: 'click-effect' }, ({ payload }) => {
-        // payload 包含 { type: 'warm'/'cool', amount: 1/-1 }
+        // 只有当这个操作不是我自己触发的时候，我才播放特效
+        // 但为了简单和确保同步，我们直接播放即可，因为本地触发时我们也做了播放，
+        // 实际上本地会播放两次吗？
+        // 本地 manualAddEnergy 调用了 showFloatingFeedback，也调用了 broadcastEffect。
+        // Broadcast 会发给自己吗？默认不会。Supabase broadcast 默认发给"所有订阅者，除了自己"。
+        // 所以这里很安全，不会导致本地双重特效。
+        
         const btnId = payload.type === 'warm' ? 'btn-warm' : 'btn-cool';
         const btn = document.getElementById(btnId);
         
-        // 播放别人的点击特效
         showFloatingFeedback(payload.type, payload.amount, btn);
         
-        // 稍微缩放一下按钮，增加互动感
         if (btn) {
             btn.style.transform = "scale(0.95)";
             setTimeout(() => btn.style.transform = "scale(1)", 100);
@@ -105,12 +104,10 @@ window.onload = async () => {
 };
 
 // ==========================================
-// 4. 核心交互 (发送广播)
+// 4. 核心交互
 // ==========================================
 
-// --- 辅助函数：发送全球特效广播 ---
 async function broadcastEffect(type, amount) {
-    // 向 'global-events' 频道发送一条消息
     await supabaseClient.channel('global-events').send({
         type: 'broadcast',
         event: 'click-effect',
@@ -120,17 +117,15 @@ async function broadcastEffect(type, amount) {
 
 // --- A. 点击大能量条 ---
 async function manualAddEnergy(type, btn) {
-    // 本地立即反馈
     btn.style.transform = "scale(0.9)";
     setTimeout(() => btn.style.transform = "scale(1)", 150);
     showFloatingFeedback(type, 1, btn);
+    
     if (type === 'warm') state.warm++; else state.cool++;
     updateUI();
 
-    // 1. 发送广播 (让全世界看到特效)
-    broadcastEffect(type, 1);
+    broadcastEffect(type, 1); // 发送广播
 
-    // 2. 更新数据库 (让全世界同步数值)
     const rpcName = type === 'warm' ? 'increment_warm' : 'increment_cool';
     await supabaseClient.rpc(rpcName, { row_id: ROW_ID });
 }
@@ -143,16 +138,16 @@ async function submitPost() {
     
     const type = postState.side;
 
-    // 本地反馈
+    // 1. 本地更新
     if (type === 'warm') state.warm++; else state.cool++;
     updateUI();
     const targetBtnId = type === 'warm' ? 'btn-warm' : 'btn-cool';
     showFloatingFeedback(type, 1, document.getElementById(targetBtnId));
 
-    // 1. 发送广播 (让全世界看到发布特效)
+    // 2. 发送广播 (特效)
     broadcastEffect(type, 1);
 
-    // 2. 存入数据库
+    // 3. 存入数据库 (关键：先存再显示，保证ID存在)
     const { data } = await supabaseClient
         .from('messages')
         .insert({ content: text, type: type })
@@ -163,7 +158,7 @@ async function submitPost() {
         createVibe(text, type, false, data.id);
     }
 
-    // 3. 更新数值
+    // 4. 更新数值
     const rpcName = type === 'warm' ? 'increment_warm' : 'increment_cool';
     await supabaseClient.rpc(rpcName, { row_id: ROW_ID });
     
@@ -178,10 +173,10 @@ async function burnMessage() {
 
     if (activeViewElement) {
         const type = activeViewElement.dataset.type;
-        const msgId = activeViewElement.dataset.id;
+        const msgId = activeViewElement.dataset.id; // 获取 ID
 
         if (type) {
-            // 本地反馈
+            // 本地数值更新
             if (type === 'warm') state.warm = Math.max(0, state.warm - 1);
             else state.cool = Math.max(0, state.cool - 1);
             updateUI();
@@ -189,18 +184,21 @@ async function burnMessage() {
             const targetBtnId = type === 'warm' ? 'btn-warm' : 'btn-cool';
             showFloatingFeedback(type, -1, document.getElementById(targetBtnId));
 
-            // 1. 发送广播 (让全世界看到 -1 特效)
+            // 发送广播 (-1 特效)
             broadcastEffect(type, -1);
 
-            // 2. 更新数值
+            // 更新数据库数值
             const rpcName = type === 'warm' ? 'decrement_warm_v2' : 'decrement_cool_v2';
             supabaseClient.rpc(rpcName, { row_id: ROW_ID });
         }
 
+        // 数据库删除 (如果这里因为权限失败，别人就看不见删除了)
         if (msgId) {
-            await supabaseClient.from('messages').delete().eq('id', msgId);
+            const { error } = await supabaseClient.from('messages').delete().eq('id', msgId);
+            if (error) console.error("删除失败:", error);
         }
 
+        // 本地视觉销毁
         activeViewElement.classList.add('shatter');
         setTimeout(() => {
             if (activeViewElement && activeViewElement.parentNode) {
