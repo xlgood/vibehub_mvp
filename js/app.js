@@ -14,13 +14,13 @@ let state = { warm: 0, cool: 0 };
 let activeViewElement = null;
 let postState = { side: null, text: "" };
 const MAX_CHARS = 60;
-const ROW_ID = 1; // 统计数据的行ID
+const ROW_ID = 1;
 
 // ==========================================
 // 3. 初始化与实时监听
 // ==========================================
 window.onload = async () => {
-    // A. 加载能量统计 (大能量条)
+    // A. 加载初始数据
     const { data: stats } = await supabaseClient
         .from('vibe_stats')
         .select('*')
@@ -33,23 +33,20 @@ window.onload = async () => {
         updateUI();
     }
 
-    // B. 加载历史气泡 (数据持久化核心)
-    // 移除之前的 initials 假数据，改为从数据库取
     const { data: messages } = await supabaseClient
         .from('messages')
         .select('*')
         .order('created_at', { ascending: false })
-        .limit(20); // 只加载最近20条，避免卡顿
+        .limit(20);
 
     if (messages) {
-        // 这里的 false 表示不播放 +1 特效，只静默显示
         messages.forEach(msg => createVibe(msg.content, msg.type, true, msg.id));
     }
 
-    // C. 开启全局监听 (监听数值变化 + 气泡变化)
+    // B. 开启全局监听频道 (Broadcast + Postgres Changes)
     const channel = supabaseClient.channel('global-events');
 
-    // C-1. 监听数值变化
+    // --- B1. 监听数值变化 (兜底校准) ---
     channel.on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'vibe_stats', filter: `id=eq.${ROW_ID}` }, 
         (payload) => {
             state.warm = payload.new.warm;
@@ -58,54 +55,87 @@ window.onload = async () => {
         }
     );
 
-    // C-2. 监听新气泡 (别人发布时，你也能看到)
+    // --- B2. 监听新气泡 (别人发布) ---
     channel.on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, 
         (payload) => {
             const newMsg = payload.new;
-            // 检查本地是否已经存在 (防止自己发的时候重复显示)
             const exists = document.querySelector(`.vibe-wrapper[data-id="${newMsg.id}"]`);
+            // 如果本地没有（说明是别人发的），才创建并播放特效
             if (!exists) {
-                createVibe(newMsg.content, newMsg.type, false, newMsg.id); // false 代表播放特效
+                createVibe(newMsg.content, newMsg.type, false, newMsg.id); // false = 播放气泡出现动画
+                
+                // 【全球同步特效】别人发了气泡，我这里也能看到按钮冒+1
+                const targetBtnId = newMsg.type === 'warm' ? 'btn-warm' : 'btn-cool';
+                showFloatingFeedback(newMsg.type, 1, document.getElementById(targetBtnId));
             }
         }
     );
 
-    // C-3. 监听气泡销毁 (别人销毁时，你这里也消失)
+    // --- B3. 监听气泡销毁 (别人删除) ---
     channel.on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'messages' }, 
         (payload) => {
             const deletedId = payload.old.id;
             const el = document.querySelector(`.vibe-wrapper[data-id="${deletedId}"]`);
             if (el) {
                 // 执行销毁动画
-                el.querySelector('.vibe-inner').classList.add('shatter'); // 内部元素破碎
+                el.querySelector('.vibe-inner').classList.add('shatter');
                 setTimeout(() => el.remove(), 500);
             }
         }
     );
 
+    // --- B4. 【核心】监听全球广播 (点击特效同步) ---
+    // 监听 'click-effect' 事件，一旦收到，就播放特效
+    channel.on('broadcast', { event: 'click-effect' }, ({ payload }) => {
+        // payload 包含 { type: 'warm'/'cool', amount: 1/-1 }
+        const btnId = payload.type === 'warm' ? 'btn-warm' : 'btn-cool';
+        const btn = document.getElementById(btnId);
+        
+        // 播放别人的点击特效
+        showFloatingFeedback(payload.type, payload.amount, btn);
+        
+        // 稍微缩放一下按钮，增加互动感
+        if (btn) {
+            btn.style.transform = "scale(0.95)";
+            setTimeout(() => btn.style.transform = "scale(1)", 100);
+        }
+    });
+
     channel.subscribe();
 };
 
 // ==========================================
-// 4. 核心交互
+// 4. 核心交互 (发送广播)
 // ==========================================
 
-// --- A. 点击大能量条 (手动充能) ---
+// --- 辅助函数：发送全球特效广播 ---
+async function broadcastEffect(type, amount) {
+    // 向 'global-events' 频道发送一条消息
+    await supabaseClient.channel('global-events').send({
+        type: 'broadcast',
+        event: 'click-effect',
+        payload: { type: type, amount: amount }
+    });
+}
+
+// --- A. 点击大能量条 ---
 async function manualAddEnergy(type, btn) {
+    // 本地立即反馈
     btn.style.transform = "scale(0.9)";
     setTimeout(() => btn.style.transform = "scale(1)", 150);
     showFloatingFeedback(type, 1, btn);
-
-    // 乐观更新
     if (type === 'warm') state.warm++; else state.cool++;
     updateUI();
 
-    // 后台同步
+    // 1. 发送广播 (让全世界看到特效)
+    broadcastEffect(type, 1);
+
+    // 2. 更新数据库 (让全世界同步数值)
     const rpcName = type === 'warm' ? 'increment_warm' : 'increment_cool';
     await supabaseClient.rpc(rpcName, { row_id: ROW_ID });
 }
 
-// --- B. 发布新气泡 (Release) ---
+// --- B. 发布新气泡 ---
 async function submitPost() {
     const input = document.getElementById('post-input');
     const text = input.value.trim();
@@ -113,37 +143,34 @@ async function submitPost() {
     
     const type = postState.side;
 
-    // 1. 立即插入数据库 (数据持久化)
-    // 注意：我们这里不直接调用 createVibe，而是让 Realtime 监听器去画，
-    // 或者为了零延迟，我们可以手动画，但要小心 ID 问题。
-    // 为了体验最好：我们先插入，拿到 ID 后再画。
-    
-    // 乐观更新数值
+    // 本地反馈
     if (type === 'warm') state.warm++; else state.cool++;
     updateUI();
     const targetBtnId = type === 'warm' ? 'btn-warm' : 'btn-cool';
     showFloatingFeedback(type, 1, document.getElementById(targetBtnId));
 
-    // 提交到数据库
-    const { data, error } = await supabaseClient
+    // 1. 发送广播 (让全世界看到发布特效)
+    broadcastEffect(type, 1);
+
+    // 2. 存入数据库
+    const { data } = await supabaseClient
         .from('messages')
         .insert({ content: text, type: type })
         .select()
         .single();
 
     if (data) {
-        // 插入成功后，立即在本地显示 (带上真实的 ID)
         createVibe(text, type, false, data.id);
     }
 
-    // 同步数值
+    // 3. 更新数值
     const rpcName = type === 'warm' ? 'increment_warm' : 'increment_cool';
     await supabaseClient.rpc(rpcName, { row_id: ROW_ID });
     
     closeModal('post-modal');
 }
 
-// --- C. 销毁气泡 (Dissolve) ---
+// --- C. 销毁气泡 ---
 async function burnMessage() {
     const modal = document.getElementById('view-modal');
     modal.classList.remove('show');
@@ -151,28 +178,29 @@ async function burnMessage() {
 
     if (activeViewElement) {
         const type = activeViewElement.dataset.type;
-        const msgId = activeViewElement.dataset.id; // 获取数据库 ID
+        const msgId = activeViewElement.dataset.id;
 
         if (type) {
-            // 乐观更新数值
+            // 本地反馈
             if (type === 'warm') state.warm = Math.max(0, state.warm - 1);
             else state.cool = Math.max(0, state.cool - 1);
             updateUI();
-
+            
             const targetBtnId = type === 'warm' ? 'btn-warm' : 'btn-cool';
             showFloatingFeedback(type, -1, document.getElementById(targetBtnId));
 
-            // 同步数值
+            // 1. 发送广播 (让全世界看到 -1 特效)
+            broadcastEffect(type, -1);
+
+            // 2. 更新数值
             const rpcName = type === 'warm' ? 'decrement_warm_v2' : 'decrement_cool_v2';
             supabaseClient.rpc(rpcName, { row_id: ROW_ID });
         }
 
-        // 关键：从数据库删除消息 (持久化删除)
         if (msgId) {
             await supabaseClient.from('messages').delete().eq('id', msgId);
         }
 
-        // 视觉销毁 (Realtime监听器也会触发一次，但重复删除不影响)
         activeViewElement.classList.add('shatter');
         setTimeout(() => {
             if (activeViewElement && activeViewElement.parentNode) {
@@ -262,31 +290,22 @@ function showFloatingFeedback(type, amount, targetElement) {
     setTimeout(() => el.remove(), 1000);
 }
 
-// 【关键修改】增加 id 参数，把数据库 ID 绑在 DOM 上
 function createVibe(text, type, isSilent = false, id = null) {
     const container = document.getElementById('floating-area');
     const wrapper = document.createElement('div');
     wrapper.className = 'vibe-wrapper';
-    
-    // 把数据库 ID 存起来，方便删除时查找
     if (id) wrapper.dataset.id = id;
-
     const inner = document.createElement('div');
     inner.className = `vibe-inner ${type}`;
     inner.innerText = text;
     wrapper.dataset.type = type;
-    
     const startX = Math.random() * 80 + 5;
     const startY = Math.random() * 90;
     wrapper.style.left = startX + "%"; wrapper.style.top = startY + "%";
     wrapper.style.animationDuration = (15 + Math.random() * 20) + "s";
     wrapper.style.animationDelay = "-" + (Math.random() * 10) + "s";
-    
     wrapper.onclick = (e) => { e.stopPropagation(); openViewModal(text, wrapper); };
-    
-    wrapper.appendChild(inner); 
-    container.appendChild(wrapper);
-    
+    wrapper.appendChild(inner); container.appendChild(wrapper);
     if (!isSilent) showFloatingFeedback(type, 1, null);
 }
 
