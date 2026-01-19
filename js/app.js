@@ -155,7 +155,7 @@ async function submitPost() {
         .single();
 
     if (data) {
-        createVibe(text, type, false, data.id);
+        createVibe(text, type, true, data.id);
     }
 
     // 4. 更新数值
