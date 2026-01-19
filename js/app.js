@@ -1,5 +1,5 @@
 // ==========================================
-// 1. Supabase 配置 (请再次确认填入你的配置)
+// 1. Supabase 配置
 // ==========================================
 const SUPABASE_URL = 'https://glcqddlmmvqigamcnyhq.supabase.co';  // 替换此处
 
@@ -14,62 +14,93 @@ let state = { warm: 0, cool: 0 };
 let activeViewElement = null;
 let postState = { side: null, text: "" };
 const MAX_CHARS = 60;
-const ROW_ID = 1;
+const ROW_ID = 1; // 统计数据的行ID
 
 // ==========================================
 // 3. 初始化与实时监听
 // ==========================================
 window.onload = async () => {
-    // 获取初始数据
-    const { data } = await supabaseClient
+    // A. 加载能量统计 (大能量条)
+    const { data: stats } = await supabaseClient
         .from('vibe_stats')
         .select('*')
         .eq('id', ROW_ID)
         .single();
 
-    if (data) {
-        state.warm = data.warm; 
-        state.cool = data.cool;
+    if (stats) {
+        state.warm = stats.warm;
+        state.cool = stats.cool;
         updateUI();
     }
 
-    // 监听实时数据 (校准本地数据)
-    supabaseClient.channel('vibe-updates')
-        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'vibe_stats', filter: `id=eq.${ROW_ID}` }, 
+    // B. 加载历史气泡 (数据持久化核心)
+    // 移除之前的 initials 假数据，改为从数据库取
+    const { data: messages } = await supabaseClient
+        .from('messages')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(20); // 只加载最近20条，避免卡顿
+
+    if (messages) {
+        // 这里的 false 表示不播放 +1 特效，只静默显示
+        messages.forEach(msg => createVibe(msg.content, msg.type, true, msg.id));
+    }
+
+    // C. 开启全局监听 (监听数值变化 + 气泡变化)
+    const channel = supabaseClient.channel('global-events');
+
+    // C-1. 监听数值变化
+    channel.on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'vibe_stats', filter: `id=eq.${ROW_ID}` }, 
         (payload) => {
-            // 这里接收的是服务器的"真理"，用来校准本地
             state.warm = payload.new.warm;
             state.cool = payload.new.cool;
             updateUI();
-        })
-        .subscribe();
+        }
+    );
 
-    // 初始气泡
-    const initials = [
-        {t: "Why is it so hot? 🔥", type: 'warm'}, {t: "Just want to sleep 😴", type: 'cool'},
-        {t: "Code works! ⚡", type: 'warm'}, {t: "Feeling lonely...", type: 'cool'}
-    ];
-    initials.forEach(item => createVibe(item.t, item.type, true));
+    // C-2. 监听新气泡 (别人发布时，你也能看到)
+    channel.on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, 
+        (payload) => {
+            const newMsg = payload.new;
+            // 检查本地是否已经存在 (防止自己发的时候重复显示)
+            const exists = document.querySelector(`.vibe-wrapper[data-id="${newMsg.id}"]`);
+            if (!exists) {
+                createVibe(newMsg.content, newMsg.type, false, newMsg.id); // false 代表播放特效
+            }
+        }
+    );
+
+    // C-3. 监听气泡销毁 (别人销毁时，你这里也消失)
+    channel.on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'messages' }, 
+        (payload) => {
+            const deletedId = payload.old.id;
+            const el = document.querySelector(`.vibe-wrapper[data-id="${deletedId}"]`);
+            if (el) {
+                // 执行销毁动画
+                el.querySelector('.vibe-inner').classList.add('shatter'); // 内部元素破碎
+                setTimeout(() => el.remove(), 500);
+            }
+        }
+    );
+
+    channel.subscribe();
 };
 
 // ==========================================
-// 4. 核心交互 (已加入乐观更新与特效)
+// 4. 核心交互
 // ==========================================
 
 // --- A. 点击大能量条 (手动充能) ---
 async function manualAddEnergy(type, btn) {
-    // 1. 按钮缩放动画
     btn.style.transform = "scale(0.9)";
     setTimeout(() => btn.style.transform = "scale(1)", 150);
-    
-    // 2. 视觉特效 (+1)
     showFloatingFeedback(type, 1, btn);
 
-    // 3. 【乐观更新】立即修改本地数字，不等服务器
+    // 乐观更新
     if (type === 'warm') state.warm++; else state.cool++;
-    updateUI(); // 界面瞬间变化，零延迟
+    updateUI();
 
-    // 4. 后台发送请求
+    // 后台同步
     const rpcName = type === 'warm' ? 'increment_warm' : 'increment_cool';
     await supabaseClient.rpc(rpcName, { row_id: ROW_ID });
 }
@@ -82,19 +113,30 @@ async function submitPost() {
     
     const type = postState.side;
 
-    // 1. 创建气泡
-    createVibe(text, type);
-
-    // 2. 【新增】寻找对应的按钮，触发 +1 特效
-    const targetBtnId = type === 'warm' ? 'btn-warm' : 'btn-cool';
-    const targetBtn = document.getElementById(targetBtnId);
-    showFloatingFeedback(type, 1, targetBtn);
-
-    // 3. 【乐观更新】立即修改本地数字
+    // 1. 立即插入数据库 (数据持久化)
+    // 注意：我们这里不直接调用 createVibe，而是让 Realtime 监听器去画，
+    // 或者为了零延迟，我们可以手动画，但要小心 ID 问题。
+    // 为了体验最好：我们先插入，拿到 ID 后再画。
+    
+    // 乐观更新数值
     if (type === 'warm') state.warm++; else state.cool++;
-    updateUI(); // 界面瞬间变化
+    updateUI();
+    const targetBtnId = type === 'warm' ? 'btn-warm' : 'btn-cool';
+    showFloatingFeedback(type, 1, document.getElementById(targetBtnId));
 
-    // 4. 后台发送请求
+    // 提交到数据库
+    const { data, error } = await supabaseClient
+        .from('messages')
+        .insert({ content: text, type: type })
+        .select()
+        .single();
+
+    if (data) {
+        // 插入成功后，立即在本地显示 (带上真实的 ID)
+        createVibe(text, type, false, data.id);
+    }
+
+    // 同步数值
     const rpcName = type === 'warm' ? 'increment_warm' : 'increment_cool';
     await supabaseClient.rpc(rpcName, { row_id: ROW_ID });
     
@@ -109,24 +151,28 @@ async function burnMessage() {
 
     if (activeViewElement) {
         const type = activeViewElement.dataset.type;
+        const msgId = activeViewElement.dataset.id; // 获取数据库 ID
 
         if (type) {
-            // 1. 【乐观更新】立即减少本地数字
+            // 乐观更新数值
             if (type === 'warm') state.warm = Math.max(0, state.warm - 1);
             else state.cool = Math.max(0, state.cool - 1);
             updateUI();
 
-            // 2. 【新增】寻找对应的按钮，触发 -1 特效
             const targetBtnId = type === 'warm' ? 'btn-warm' : 'btn-cool';
-            const targetBtn = document.getElementById(targetBtnId);
-            showFloatingFeedback(type, -1, targetBtn);
+            showFloatingFeedback(type, -1, document.getElementById(targetBtnId));
 
-            // 3. 后台发送请求
+            // 同步数值
             const rpcName = type === 'warm' ? 'decrement_warm_v2' : 'decrement_cool_v2';
             supabaseClient.rpc(rpcName, { row_id: ROW_ID });
         }
 
-        // 4. 气泡破碎动画
+        // 关键：从数据库删除消息 (持久化删除)
+        if (msgId) {
+            await supabaseClient.from('messages').delete().eq('id', msgId);
+        }
+
+        // 视觉销毁 (Realtime监听器也会触发一次，但重复删除不影响)
         activeViewElement.classList.add('shatter');
         setTimeout(() => {
             if (activeViewElement && activeViewElement.parentNode) {
@@ -145,7 +191,6 @@ function updateUI() {
     document.getElementById('count-warm').innerText = formatCount(state.warm);
     document.getElementById('count-cool').innerText = formatCount(state.cool);
 
-    // 计算百分比
     let warmPct = 50, coolPct = 50;
     if (total > 0) {
         warmPct = (state.warm / total) * 100;
@@ -158,7 +203,6 @@ function updateUI() {
     barWarm.innerText = total === 0 ? "0%" : Math.round(warmPct) + "%";
     barCool.innerText = total === 0 ? "0%" : Math.round(coolPct) + "%";
 
-    // 颜色切换逻辑
     const root = document.documentElement;
     const statusText = document.getElementById('status-text');
     const voltageText = document.getElementById('voltage-text');
@@ -204,38 +248,45 @@ function formatCount(num) {
 function showFloatingFeedback(type, amount, targetElement) {
     const el = document.createElement('div');
     el.className = 'feedback-float';
-    // 根据正负数显示不同符号
     el.innerText = amount > 0 ? `+${amount}` : amount;
     el.style.color = type === 'warm' ? 'var(--warm-primary)' : 'var(--cool-primary)';
     
     if(targetElement) {
         const rect = targetElement.getBoundingClientRect();
-        // 让数字从按钮中间飘出来
         el.style.left = (rect.left + rect.width / 2 - 15) + 'px';
         el.style.top = (rect.top) + 'px';
     } else { 
         el.style.left = '50%'; el.style.top = '50%'; 
     }
-    
     document.body.appendChild(el);
     setTimeout(() => el.remove(), 1000);
 }
 
-function createVibe(text, type, isSilent = false) {
+// 【关键修改】增加 id 参数，把数据库 ID 绑在 DOM 上
+function createVibe(text, type, isSilent = false, id = null) {
     const container = document.getElementById('floating-area');
     const wrapper = document.createElement('div');
     wrapper.className = 'vibe-wrapper';
+    
+    // 把数据库 ID 存起来，方便删除时查找
+    if (id) wrapper.dataset.id = id;
+
     const inner = document.createElement('div');
     inner.className = `vibe-inner ${type}`;
     inner.innerText = text;
     wrapper.dataset.type = type;
+    
     const startX = Math.random() * 80 + 5;
     const startY = Math.random() * 90;
     wrapper.style.left = startX + "%"; wrapper.style.top = startY + "%";
     wrapper.style.animationDuration = (15 + Math.random() * 20) + "s";
     wrapper.style.animationDelay = "-" + (Math.random() * 10) + "s";
+    
     wrapper.onclick = (e) => { e.stopPropagation(); openViewModal(text, wrapper); };
-    wrapper.appendChild(inner); container.appendChild(wrapper);
+    
+    wrapper.appendChild(inner); 
+    container.appendChild(wrapper);
+    
     if (!isSilent) showFloatingFeedback(type, 1, null);
 }
 
