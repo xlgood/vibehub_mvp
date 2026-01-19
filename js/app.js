@@ -131,6 +131,7 @@ async function manualAddEnergy(type, btn) {
 }
 
 // --- B. 发布新气泡 ---
+// --- B. 发布新气泡 ---
 async function submitPost() {
     const input = document.getElementById('post-input');
     const text = input.value.trim();
@@ -138,16 +139,16 @@ async function submitPost() {
     
     const type = postState.side;
 
-    // 1. 本地更新
+    // 1. 本地更新 (让用户觉得快)
     if (type === 'warm') state.warm++; else state.cool++;
     updateUI();
+    
+    // 2. 播放特效
     const targetBtnId = type === 'warm' ? 'btn-warm' : 'btn-cool';
     showFloatingFeedback(type, 1, document.getElementById(targetBtnId));
-
-    // 2. 发送广播 (特效)
     broadcastEffect(type, 1);
 
-    // 3. 存入数据库 (关键：先存再显示，保证ID存在)
+    // 3. 存入数据库 (触发器会自动去加分，不用我们管了！)
     const { data } = await supabaseClient
         .from('messages')
         .insert({ content: text, type: type })
@@ -155,16 +156,14 @@ async function submitPost() {
         .single();
 
     if (data) {
+        // silent = true，防止出现双重气泡特效
         createVibe(text, type, true, data.id);
     }
-
-    // 4. 更新数值
-    const rpcName = type === 'warm' ? 'increment_warm' : 'increment_cool';
-    await supabaseClient.rpc(rpcName, { row_id: ROW_ID });
     
     closeModal('post-modal');
 }
 
+// --- C. 销毁气泡 ---
 // --- C. 销毁气泡 ---
 async function burnMessage() {
     const modal = document.getElementById('view-modal');
@@ -173,32 +172,27 @@ async function burnMessage() {
 
     if (activeViewElement) {
         const type = activeViewElement.dataset.type;
-        const msgId = activeViewElement.dataset.id; // 获取 ID
+        const msgId = activeViewElement.dataset.id;
 
         if (type) {
-            // 本地数值更新
+            // 本地更新
             if (type === 'warm') state.warm = Math.max(0, state.warm - 1);
             else state.cool = Math.max(0, state.cool - 1);
             updateUI();
             
+            // 播放特效
             const targetBtnId = type === 'warm' ? 'btn-warm' : 'btn-cool';
             showFloatingFeedback(type, -1, document.getElementById(targetBtnId));
-
-            // 发送广播 (-1 特效)
             broadcastEffect(type, -1);
-
-            // 更新数据库数值
-            const rpcName = type === 'warm' ? 'decrement_warm_v2' : 'decrement_cool_v2';
-            supabaseClient.rpc(rpcName, { row_id: ROW_ID });
         }
 
-        // 数据库删除 (如果这里因为权限失败，别人就看不见删除了)
+        // 数据库删除 (触发器会自动去减分！)
         if (msgId) {
             const { error } = await supabaseClient.from('messages').delete().eq('id', msgId);
             if (error) console.error("删除失败:", error);
         }
 
-        // 本地视觉销毁
+        // 视觉销毁
         activeViewElement.classList.add('shatter');
         setTimeout(() => {
             if (activeViewElement && activeViewElement.parentNode) {
